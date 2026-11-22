@@ -541,6 +541,6 @@ test('legacy missing courses remain recoverable without fabricated totals',async
  await page.reload();await expect(page.getByText('Not in this catalog: tut-100')).toBeVisible();
  await expect(page.getByTestId('planned-csc-151')).toContainText('Functional Prob Solving w/lab');
  await expect(page.locator('.total-credits')).toContainText('Credits unavailable');
- await page.getByRole('button',{name:'Remove unavailable tut-100'}).click();await expect(page.getByTestId('planned-tut-100')).toHaveCount(0);
+ await page.getByRole('button',{name:'Remove tut-100 from plan'}).click();await expect(page.getByTestId('planned-tut-100')).toHaveCount(0);
  await page.getByRole('button',{name:'Undo last change'}).click();await expect(page.getByTestId('planned-tut-100')).toBeVisible();
 });
