@@ -1,0 +1,322 @@
+[
+  {
+    "id": "tut-100",
+    "code": "TUT 100",
+    "title": "First-Year Tutorial",
+    "department": "Tutorial",
+    "level": 100,
+    "credits": 4,
+    "description": "Practice close reading, thoughtful discussion, and writing through a shared question.",
+    "prerequisites": null
+  },
+  {
+    "id": "csc-151",
+    "code": "CSC 151",
+    "title": "Functional Problem Solving",
+    "department": "Computer Science",
+    "level": 100,
+    "credits": 4,
+    "description": "Explore computation through functional programming, visual experiments, and creative problem solving.",
+    "prerequisites": null
+  },
+  {
+    "id": "csc-161",
+    "code": "CSC 161",
+    "title": "Imperative Problem Solving",
+    "department": "Computer Science",
+    "level": 100,
+    "credits": 4,
+    "description": "Build programs using structured data, iteration, and systematic problem-solving strategies.",
+    "prerequisites": null
+  },
+  {
+    "id": "csc-207",
+    "code": "CSC 207",
+    "title": "Object-Oriented Problem Solving",
+    "department": "Computer Science",
+    "level": 200,
+    "credits": 4,
+    "description": "Design collaborative software with objects, interfaces, and reusable abstractions.",
+    "prerequisites": "Demo prerequisite: CSC 161 or equivalent experience."
+  },
+  {
+    "id": "csc-208",
+    "code": "CSC 208",
+    "title": "Discrete Structures",
+    "department": "Computer Science",
+    "level": 200,
+    "credits": 4,
+    "description": "Investigate logic, proofs, graphs, and the mathematical foundations of computing.",
+    "prerequisites": null
+  },
+  {
+    "id": "csc-301",
+    "code": "CSC 301",
+    "title": "Analysis of Algorithms",
+    "department": "Computer Science",
+    "level": 300,
+    "credits": 4,
+    "description": "Compare approaches to computational problems and reason about their efficiency.",
+    "prerequisites": "Demo prerequisite: CSC 207 and CSC 208."
+  },
+  {
+    "id": "mat-131",
+    "code": "MAT 131",
+    "title": "Calculus I",
+    "department": "Mathematics",
+    "level": 100,
+    "credits": 4,
+    "description": "Study change and accumulation through limits, derivatives, and integrals.",
+    "prerequisites": null
+  },
+  {
+    "id": "mat-133",
+    "code": "MAT 133",
+    "title": "Calculus II",
+    "department": "Mathematics",
+    "level": 100,
+    "credits": 4,
+    "description": "Extend your understanding of integration, series, and multivariable ideas.",
+    "prerequisites": "Demo prerequisite: MAT 131 or appropriate placement."
+  },
+  {
+    "id": "mat-215",
+    "code": "MAT 215",
+    "title": "Linear Algebra",
+    "department": "Mathematics",
+    "level": 200,
+    "credits": 4,
+    "description": "Discover the geometry of vectors, matrices, and linear transformations.",
+    "prerequisites": null
+  },
+  {
+    "id": "mat-218",
+    "code": "MAT 218",
+    "title": "Combinatorics",
+    "department": "Mathematics",
+    "level": 200,
+    "credits": 4,
+    "description": "Learn to count, organize, and reason about discrete mathematical structures.",
+    "prerequisites": null
+  },
+  {
+    "id": "sta-209",
+    "code": "STA 209",
+    "title": "Applied Statistics",
+    "department": "Statistics",
+    "level": 200,
+    "credits": 4,
+    "description": "Use data and statistical models to investigate questions across disciplines.",
+    "prerequisites": null
+  },
+  {
+    "id": "sta-310",
+    "code": "STA 310",
+    "title": "Statistical Modeling",
+    "department": "Statistics",
+    "level": 300,
+    "credits": 4,
+    "description": "Develop and interpret models for complex data and uncertainty.",
+    "prerequisites": null
+  },
+  {
+    "id": "eng-120",
+    "code": "ENG 120",
+    "title": "Literary Analysis",
+    "department": "English",
+    "level": 100,
+    "credits": 4,
+    "description": "Read poetry, fiction, and drama with attention to language, form, and interpretation.",
+    "prerequisites": null
+  },
+  {
+    "id": "eng-205",
+    "code": "ENG 205",
+    "title": "The Craft of Creative Writing",
+    "department": "English",
+    "level": 200,
+    "credits": 4,
+    "description": "Explore voice and form through writing workshops and close reading.",
+    "prerequisites": null
+  },
+  {
+    "id": "eng-225",
+    "code": "ENG 225",
+    "title": "Literature, Place, and the Environment",
+    "department": "English",
+    "level": 200,
+    "credits": 4,
+    "description": "Consider how stories shape our relationships with landscapes and ecological change.",
+    "prerequisites": null
+  },
+  {
+    "id": "his-100",
+    "code": "HIS 100",
+    "title": "Making History",
+    "department": "History",
+    "level": 100,
+    "credits": 4,
+    "description": "Explore how historians turn evidence into accounts of the past.",
+    "prerequisites": null
+  },
+  {
+    "id": "his-235",
+    "code": "HIS 235",
+    "title": "Cities and Social Change",
+    "department": "History",
+    "level": 200,
+    "credits": 4,
+    "description": "Trace urban life through migration, labor, politics, and everyday experience.",
+    "prerequisites": null
+  },
+  {
+    "id": "phi-101",
+    "code": "PHI 101",
+    "title": "Introduction to Philosophy",
+    "department": "Philosophy",
+    "level": 100,
+    "credits": 4,
+    "description": "Ask foundational questions about knowledge, reality, and how to live.",
+    "prerequisites": null
+  },
+  {
+    "id": "phi-215",
+    "code": "PHI 215",
+    "title": "Ethics and the Good Life",
+    "department": "Philosophy",
+    "level": 200,
+    "credits": 4,
+    "description": "Examine competing accounts of responsibility, flourishing, and moral judgment.",
+    "prerequisites": null
+  },
+  {
+    "id": "art-111",
+    "code": "ART 111",
+    "title": "Drawing",
+    "department": "Studio Art",
+    "level": 100,
+    "credits": 4,
+    "description": "Develop observational and expressive skills through material experimentation.",
+    "prerequisites": null
+  },
+  {
+    "id": "art-134",
+    "code": "ART 134",
+    "title": "Digital Art and Visual Thinking",
+    "department": "Studio Art",
+    "level": 100,
+    "credits": 4,
+    "description": "Use digital tools to investigate images, composition, and creative expression.",
+    "prerequisites": null
+  },
+  {
+    "id": "mus-110",
+    "code": "MUS 110",
+    "title": "Introduction to Music",
+    "department": "Music",
+    "level": 100,
+    "credits": 4,
+    "description": "Listen closely to musical traditions and explore how music creates meaning.",
+    "prerequisites": null
+  },
+  {
+    "id": "mus-101",
+    "code": "MUS 101",
+    "title": "Music Ensemble",
+    "department": "Music",
+    "level": 100,
+    "credits": 1,
+    "description": "Make music in a collaborative performance setting.",
+    "prerequisites": null
+  },
+  {
+    "id": "bio-150",
+    "code": "BIO 150",
+    "title": "Introduction to Biological Inquiry",
+    "department": "Biology",
+    "level": 100,
+    "credits": 4,
+    "description": "Explore living systems through observation, experimental design, and evidence.",
+    "prerequisites": null
+  },
+  {
+    "id": "chm-129",
+    "code": "CHM 129",
+    "title": "General Chemistry",
+    "department": "Chemistry",
+    "level": 100,
+    "credits": 4,
+    "description": "Investigate matter, chemical reactions, and the molecular world.",
+    "prerequisites": null
+  },
+  {
+    "id": "phy-131",
+    "code": "PHY 131",
+    "title": "General Physics I",
+    "department": "Physics",
+    "level": 100,
+    "credits": 4,
+    "description": "Develop models of motion, forces, and energy through experimentation.",
+    "prerequisites": null
+  },
+  {
+    "id": "psy-113",
+    "code": "PSY 113",
+    "title": "Introduction to Psychology",
+    "department": "Psychology",
+    "level": 100,
+    "credits": 4,
+    "description": "Examine behavior and the mind through scientific inquiry.",
+    "prerequisites": null
+  },
+  {
+    "id": "ecn-111",
+    "code": "ECN 111",
+    "title": "Introduction to Economics",
+    "department": "Economics",
+    "level": 100,
+    "credits": 4,
+    "description": "Explore choices, markets, and the institutions shaping economic life.",
+    "prerequisites": null
+  },
+  {
+    "id": "soc-111",
+    "code": "SOC 111",
+    "title": "Introduction to Sociology",
+    "department": "Sociology",
+    "level": 100,
+    "credits": 4,
+    "description": "Investigate how social structures shape identities and everyday life.",
+    "prerequisites": null
+  },
+  {
+    "id": "ant-104",
+    "code": "ANT 104",
+    "title": "Culture and Society",
+    "department": "Anthropology",
+    "level": 100,
+    "credits": 4,
+    "description": "Consider the diversity of human experience through ethnographic perspectives.",
+    "prerequisites": null
+  },
+  {
+    "id": "spn-105",
+    "code": "SPN 105",
+    "title": "Beginning Spanish",
+    "department": "Spanish",
+    "level": 100,
+    "credits": 4,
+    "description": "Build foundations for communication and cultural understanding in Spanish.",
+    "prerequisites": null
+  },
+  {
+    "id": "frn-101",
+    "code": "FRN 101",
+    "title": "Beginning French",
+    "department": "French",
+    "level": 100,
+    "credits": 4,
+    "description": "Develop language skills through everyday communication and cultural exploration.",
+    "prerequisites": null
+  }
+]

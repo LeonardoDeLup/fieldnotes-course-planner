@@ -1,0 +1,15 @@
+.tools/
+backend/.venv/
+__pycache__/
+.pytest_cache/
+frontend/node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+*.tsbuildinfo
+
+# macOS and local configuration
+.DS_Store
+.env
+.env.*
+!.env.example
