@@ -17,7 +17,7 @@ export interface Advice {
   proposals: Proposal[]; findings: Finding[]; suggestions: {courseId:string;reason:string;availability:string|null;requisiteStatus:string|null;evidence:Evidence[];proposalId:string|null}[];
   semesterStats: {semesterId:SemesterId;courseCount:number;credits:number|null}[];
 }
-export interface AdviceOptions { semesterId?: string; targetCredits: number; focusDepartments: string[]; goals: string; allowRequisiteReview?: boolean; courseId?: string }
+export interface AdviceOptions { semesterId?: string; targetCredits?: number; focusDepartments: string[]; goals: string; allowRequisiteReview?: boolean; courseId?: string }
 export interface AdvisorPlan { version: 1; startYear: number; entries: {courseId:string;semesterId:string}[] }
 
 export function projectPlan(plan: Plan): AdvisorPlan {
@@ -53,7 +53,11 @@ export async function fetchAdvice(action: AdviceAction, revision: string, plan: 
   const response=await fetch("/api/ai/advice",{method:"POST",headers:{"Content-Type":"application/json"},signal,body:JSON.stringify({action,catalogRevision:revision,plan:projectPlan(plan),options})});
   if (!response.ok) {
     const body=await response.json().catch(()=>null);
-    const error=new Error(body?.detail?.code ?? `Advisor request failed (${response.status})`);
+    const detail = body?.detail;
+    const message = response.status === 422
+      ? typeof detail === "string" ? detail : "The advisor rejected this request. Check your plan and advisor settings."
+      : detail?.code ?? `Advisor request failed (${response.status})`;
+    const error = new Error(message);
     (error as Error & {status?:number}).status=response.status;
     throw error;
   }

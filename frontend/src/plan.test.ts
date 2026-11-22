@@ -35,8 +35,7 @@ describe("plan operations", () => {
     expect(totalCredits([], [])).toBe(0);
   });
   it("round trips saved plans and rejects malformed or duplicate entries", () => {
-    const p = examplePlan(2026, [{id:"csc-151"}] as Course[]);
-    expect(p.entries.map(e=>e.courseId)).toEqual(["csc-151"]);
+    const p = place(emptyPlan(), "csc-151", "semester-0");
     expect(parsePlan(JSON.stringify(p))).toEqual(p);
     expect(() => parsePlan("{")).toThrow();
     expect(() =>
@@ -45,6 +44,26 @@ describe("plan operations", () => {
       ),
     ).toThrow();
     expect(() => parsePlan(JSON.stringify({ ...p, startYear: 0 }))).toThrow();
+  });
+  it("does not build a partial example from an incomplete catalog", () => {
+    expect(examplePlan(2026, [{ id: "csc-151" }] as Course[])).toBeNull();
+  });
+  it("fills all eight semesters in the example plan", () => {
+    const ids = [
+      "bio-150-cb736b1ae340-1", "csc-151", "mat-131", "eng-120-33fd7effb9ef-1",
+      "csc-161", "mat-133", "phi-101", "art-111",
+      "csc-207", "sta-209", "ecn-111", "art-155",
+      "csc-208", "mat-215", "mus-116", "soc-111",
+      "csc-211", "mat-220", "ecn-233", "rel-106",
+      "csc-301", "sta-230", "pol-101", "eng-205",
+      "csc-324", "mat-306", "psy-113", "mus-112",
+      "csc-341", "sta-309", "soc-350", "phi-254",
+    ];
+    const plan = examplePlan(2026, ids.map(id => ({ id })) as Course[]);
+    expect(plan?.entries).toHaveLength(32);
+    expect(new Set(plan?.entries.map(entry => entry.semesterId))).toEqual(
+      new Set(Array.from({ length: 8 }, (_, i) => `semester-${i}`)),
+    );
   });
   it("labels spring in the following calendar year", () => {
     expect(semesterLabel("semester-1", 2026)).toBe("Spring 2027");

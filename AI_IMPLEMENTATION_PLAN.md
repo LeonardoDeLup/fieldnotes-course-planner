@@ -57,13 +57,13 @@ Make `revision` the SHA-256 hex digest of the JSON-serialized course records sor
     "targetCredits": 16,
     "focusDepartments": ["MAT", "STA"],
     "goals": "Explore statistics and keep computer science options open.",
-    "allowRequisiteReview": false
+    "allowRequisiteReview": true
   }
 }
 ```
 
 - Use the same semester IDs and starting-year range (2000–2100) as `parsePlan`. Limit to 128 entries and course IDs of 1–120 characters. Reject duplicate course IDs and malformed semester IDs. Preserve unknown saved IDs as unresolved entries. Resolve submitted subject course IDs and department filters against the current catalog.
-- `generate_semester` requires `semesterId`. Defaults: `targetCredits=16`, `focusDepartments=[]`, `goals=""`, `allowRequisiteReview=false`. `critique_plan` uses the same options except `semesterId` and `allowRequisiteReview`. The critique target is a planning reference for populated semesters. The generation target is a ceiling. Valid targets are 1–24 in half-credit increments. Accept up to five distinct department codes and 400 characters of trimmed goals. Empty goals are valid.
+- `generate_semester` requires `semesterId`. Defaults: `targetCredits=16`, `focusDepartments=[]`, `goals=""`, `allowRequisiteReview=true`. `critique_plan` uses the same options except `semesterId` and `allowRequisiteReview`. The critique target is a planning reference for populated semesters. The generation target is a ceiling. Valid targets are 1–24 in half-credit increments. Accept up to five distinct department codes and 400 characters of trimmed goals. Empty goals are valid.
 - Serialize only on explicit submission. The backend reads titles, prerequisites, descriptions and credits from the repository. It receives placements and the current form values from the browser. Keep forms, drafts and critique results in memory.
 
 ### 3.2 Response
@@ -159,7 +159,7 @@ Supply task name, goal text, target, focus, all semester labels and stats, and u
 ### Interaction
 
 - Add **Generate semester** to every `Semester` header in `main.tsx`, with an accessible name including the semester label. Extend the AI drawer state with the initial workflow and optional `semesterId`. Opening from the header preselects that semester. Opening from the global **AI advisor** button lets the user choose. Prefer the earliest empty semester for an unseeded form, or `semester-0` if all are populated.
-- Show the semester selector, current credits, **Target credits** (default 16), up to five optional focus departments, a single goals field, and **Include courses with prerequisites to verify** (default unchecked). Explain that the draft fills open credits and uses the eight-term plan for context. The user can generate into an empty or partially filled semester. A target already reached, or unknown current total, yields a specific empty result and a next step.
+- Show the semester selector, current credits, **Target credits** (default 16), up to five optional focus departments, and a single goals field. Always allow courses with catalog requisites that need review, and require acknowledgment before applying drafts that include them. Explain that the draft fills open credits and uses the eight-term plan for context. The user can generate into an empty or partially filled semester. A target already reached, or unknown current total, yields a specific empty result and a next step.
 - Show up to three drafts. Each shows the current and resulting totals, remaining credit gap if any, individual additions, reasons tied to goals or sequencing, term evidence and requisite alerts. Existing course cards stay in the semester. Proposed courses appear in the drawer preview until **Add courses** is clicked. A draft with `needs_review` requires a checkbox acknowledgment in its preview. Reset the acknowledgment when proposal or input changes.
 
 ### Construction

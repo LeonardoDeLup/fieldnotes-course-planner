@@ -21,6 +21,34 @@ function course(code: string, system_requisites?: string): Course {
 }
 
 describe("plan requisite warnings", () => {
+  it("expands the department in MAT 316's abbreviated alternatives", () => {
+    const courses = [
+      course("MAT 218"),
+      {
+        ...course("MAT 316", `MAT-218 or 222${earlier}`),
+        prerequisites: "Mathematics 218, or 222",
+      },
+    ];
+    const plan = place(emptyPlan(), "mat-316", "semester-1");
+    expect(planRequisiteWarnings(plan, courses).get("mat-316")).toEqual([
+      "MAT 218 or MAT 222 in an earlier semester",
+    ]);
+
+    for (const alternative of ["mat-218", "mat-222"]) {
+      const earlierPlan = place(plan, alternative, "semester-0");
+      expect(planRequisiteWarnings(earlierPlan, courses).has("mat-316")).toBe(false);
+    }
+  });
+
+  it("leaves abbreviated alternatives for manual review when the description lists an additional option", () => {
+    const courses = [{
+      ...course("MAT 321", `MAT 218 or 222${earlier}`),
+      prerequisites: "Mathematics 218, 222 or 246",
+    }];
+    const plan = place(emptyPlan(), "mat-321", "semester-1");
+    expect(planRequisiteWarnings(plan, courses).has("mat-321")).toBe(false);
+  });
+
   it("requires each group and accepts any earlier alternative, including saved courses absent from the catalog", () => {
     const courses = [
       course("CSC 207"),

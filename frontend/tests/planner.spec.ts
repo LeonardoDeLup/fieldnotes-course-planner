@@ -126,6 +126,48 @@ test("critique previews and applies a supported move before undo", async ({page}
   await expect(page.getByTestId("semester-0").getByTestId("planned-csc-161")).toBeVisible();
 });
 
+test("alternatives use the selected course's planned semester and omit a hidden credit target", async ({ page }) => {
+  const plan = {
+    version: 1, startYear: 2026,
+    entries: [{ id: "saved", courseId: "mat-316", semesterId: "semester-1" }],
+  };
+  await page.evaluate((value) => localStorage.setItem("fieldnotes-plan-v1", JSON.stringify(value)), plan);
+  await page.reload();
+  await page.getByRole("button", { name: "AI advisor" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Reference credit target").fill("0");
+  await expect(dialog.getByRole("button", { name: "Review plan" })).toBeDisabled();
+  await dialog.getByLabel("Planning workflow").selectOption("find_alternatives");
+  await dialog.getByLabel("Course", { exact: true }).selectOption("mat-316");
+  await expect(dialog.getByText("Planned for Spring 2027.")).toBeVisible();
+
+  await page.route("**/api/ai/advice", (route) => route.fulfill({
+    status: 422,
+    json: { detail: "Select the course in its current planned semester" },
+  }));
+  const request = page.waitForRequest("**/api/ai/advice");
+  await dialog.getByRole("button", { name: "Get advice" }).click();
+  expect((await request).postDataJSON().options).toEqual({
+    courseId: "mat-316", semesterId: "semester-1", focusDepartments: [], goals: "",
+  });
+  await expect(dialog.getByRole("alert")).toContainText("Select the course in its current planned semester");
+});
+
+test("the advisor validates focus department codes before sending a request", async ({ page }) => {
+  await page.getByRole("button", { name: "AI advisor" }).click();
+  const dialog = page.getByRole("dialog");
+  const review = dialog.getByRole("button", { name: "Review plan" });
+  const focus = dialog.getByLabel("Focus departments (up to five)");
+  await focus.fill("Computer Science");
+  await expect(focus).toHaveAccessibleDescription("Use catalog department codes such as CSC or MAT.");
+  await expect(review).toBeDisabled();
+  await focus.fill("CSC, MAT, BIO, CHM, PHY, ENG");
+  await expect(focus).toHaveAccessibleDescription("Enter up to five department codes.");
+  await expect(review).toBeDisabled();
+  await focus.fill("csc, mat; csc");
+  await expect(review).toBeEnabled();
+});
+
 test("four-year advisor previews all terms, applies as one edit, and keeps saved courses on undo", async ({page})=>{
   test.setTimeout(125_000);
   const plan={version:1,startYear:2026,entries:[{id:"saved",courseId:"csc-151",semesterId:"semester-0"}]};
@@ -135,15 +177,17 @@ test("four-year advisor previews all terms, applies as one edit, and keeps saved
   const dialog=page.getByRole("dialog");
   await dialog.getByLabel("Planning workflow").selectOption({label:"Generate 4-year plan"});
   await expect(dialog.getByLabel("Semester",{exact:true})).toHaveCount(0);
-  await dialog.getByLabel("Focus departments (up to five)").fill("CSC");
+  await dialog.getByLabel("Focus departments (up to five)").fill("MAT, CSC, STA");
   await dialog.getByRole("button",{name:"Generate 4-year plan"}).click();
   await expect(dialog.getByRole("heading",{name:"4-year plan preview"})).toBeVisible({timeout:110_000});
   await expect(dialog.locator(".full-plan-terms summary")).toHaveCount(8);
   await expect(dialog.getByText("16-credit target in 8 of 8 semesters",{exact:false})).toBeVisible();
+  await expect(dialog.getByText(/Proposed courses by focus department \(MAT [1-9]\d*, CSC [1-9]\d*, STA [1-9]\d*\)/)).toBeVisible();
   await dialog.locator("summary").filter({hasText:"Fall 2026"}).click();
   await expect(dialog.getByText("Already planned",{exact:true})).toBeVisible();
   await expect(page.locator(".planned-card")).toHaveCount(1);
 
+  await dialog.getByRole("checkbox", { name: "I’ll verify the listed requisites before using this draft." }).check();
   await dialog.getByRole("button",{name:"Apply 4-year draft"}).click();
   await expect(dialog).not.toBeVisible();
   await expect(page.locator(".total-credits")).toContainText("128");
@@ -234,20 +278,70 @@ test("filters, example confirmation, dates and populated screenshots", async ({
   await expect(page.getByText("No courses found")).toBeVisible();
   await page.getByRole("button", { name: "Clear filters" }).click();
   await page.getByRole("button", { name: "Load example plan" }).click();
-  await expect(page.locator(".planned-card")).toHaveCount(12);
-  await expect(page.locator(".total-credits")).toContainText("45");
+  await expect(page.locator(".planned-card")).toHaveCount(32);
+  await expect(page.locator(".total-credits")).toContainText("128");
+  const firstTerm = page.getByTestId("semester-0");
+  await expect(firstTerm.locator(".planned-card").filter({ hasText: "BIO 150" })).toHaveCount(1);
+  await expect(firstTerm.locator(".planned-card").filter({ hasText: "ENG 120" })).toHaveCount(1);
+  for (let i = 0; i < 8; i++) {
+    await expect(page.getByTestId(`semester-${i}`).locator(".planned-card")).toHaveCount(4);
+  }
+  await expect(page.getByText("Not in this catalog:", { exact: false })).toHaveCount(0);
   await page.getByRole("button", { name: "Load example plan" }).click();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(page.locator(".planned-card")).toHaveCount(12);
+  await expect(page.locator(".planned-card")).toHaveCount(32);
+  await firstTerm.getByTestId("planned-csc-151").locator(".card-main").click();
+  await page.getByRole("button", { name: "Remove from plan", exact: true }).click();
+  await expect(page.locator(".planned-card")).toHaveCount(31);
+  await page.getByRole("button", { name: "Load example plan" }).click();
+  await page.getByRole("button", { name: "Replace plan" }).click();
+  await expect(firstTerm.getByTestId("planned-csc-151")).toBeVisible();
+  await expect(page.locator(".planned-card")).toHaveCount(32);
   await page.getByLabel("Starting fall").selectOption("2027");
   await expect(page.getByTestId("semester-7")).toContainText("Spring 2031");
-  await expect(page.locator(".planned-card")).toHaveCount(12);
+  await expect(page.locator(".planned-card")).toHaveCount(32);
   await page.getByLabel("Starting fall").selectOption("2026");
   await page.getByRole("button", { name: "Dismiss notification" }).click();
   await page.screenshot({
     path: "../artifacts/desktop-populated.png",
     fullPage: true,
   });
+});
+test("clear schedule can be canceled, undone, and saved", async ({ page }) => {
+  const plan = {
+    version: 1,
+    startYear: 2028,
+    entries: [
+      { id: "saved-course", courseId: "csc-151", semesterId: "semester-0" },
+      { id: "legacy-course", courseId: "tut-100", semesterId: "semester-7" },
+    ],
+  };
+  await page.evaluate(value => localStorage.setItem("fieldnotes-plan-v1", JSON.stringify(value)), plan);
+  await page.reload();
+  const clear = page.getByRole("button", { name: "Clear schedule", exact: true });
+  const undo = page.getByRole("button", { name: "Undo last change" });
+  await clear.click();
+  const cancel = page.getByRole("button", { name: "Cancel", exact: true });
+  await expect(cancel).toBeFocused();
+  await cancel.click();
+  await expect(clear).toBeFocused();
+  await expect(page.locator(".planned-card")).toHaveCount(2);
+
+  await clear.click();
+  await page.getByRole("button", { name: "Clear all courses" }).click();
+  await expect(page.locator(".planned-card")).toHaveCount(0);
+  await expect(clear).toBeDisabled();
+  await expect(page.getByLabel("Starting fall")).toHaveValue("2028");
+  await expect(undo).toBeFocused();
+  await undo.click();
+  await expect(page.getByTestId("semester-0").getByTestId("planned-csc-151")).toBeVisible();
+  await expect(page.getByTestId("semester-7").getByTestId("planned-tut-100")).toBeVisible();
+
+  await clear.click();
+  await page.getByRole("button", { name: "Clear all courses" }).click();
+  await page.reload();
+  await expect(page.locator(".planned-card")).toHaveCount(0);
+  await expect(page.getByLabel("Starting fall")).toHaveValue("2028");
 });
 test("responsive layout, keyboard add, reduced motion, and drawer focus", async ({
   page,
@@ -296,11 +390,11 @@ test("API failure preserves the saved plan and retry restores catalog", async ({
   await expect(
     page.getByText("Courses could not load.", { exact: false }),
   ).toBeVisible();
-  await expect(page.locator(".planned-card")).toHaveCount(12);
+  await expect(page.locator(".planned-card")).toHaveCount(32);
   await page.unroute("**/api/courses");
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(page.getByText("395 courses", { exact: true })).toBeVisible();
-  await expect(page.locator(".planned-card")).toHaveCount(12);
+  await expect(page.locator(".planned-card")).toHaveCount(32);
 });
 test("advisor recovers from an older API without showing an empty plan", async ({ page }) => {
   await page.getByRole("button", { name: "Load example plan" }).click();
@@ -316,7 +410,7 @@ test("advisor recovers from an older API without showing an empty plan", async (
   const dialog = page.getByRole("dialog");
   const review = dialog.getByRole("button", { name: "Review plan" });
   await expect(dialog).toContainText("Advisor service unavailable");
-  await expect(dialog).toContainText("Your plan has 12 courses across 4 semesters. Catalog: unavailable.");
+  await expect(dialog).toContainText("Your plan has 32 courses across 8 semesters. Catalog: unavailable.");
   await expect(dialog.getByText("Your plan is empty.", { exact: false })).toHaveCount(0);
   await expect(review).toBeDisabled();
 

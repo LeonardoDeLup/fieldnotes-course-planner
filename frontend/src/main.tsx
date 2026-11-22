@@ -29,7 +29,6 @@ import {
   Undo2,
   PanelLeftClose,
   PanelLeftOpen,
-  Sparkles,
   ChevronDown,
   Check,
   CalendarDays,
@@ -44,6 +43,7 @@ import "@fontsource/source-sans-3/600.css";
 import "@fontsource/literata/400.css";
 import "./styles.css";
 import { AiAdvisor } from "./AiAdvisor";
+import advisorSquirrel from "./advisor-squirrel.webp";
 import { fetchCatalog } from "./advisorApi";
 import type { AdviceAction, Proposal } from "./advisorApi";
 import {
@@ -215,7 +215,14 @@ function PlannedCard({
         )}
       </button>
       {warning && <span id={warningId} hidden>{warning}</span>}
-      {!course && <button className="icon-button" aria-label={`Remove unavailable ${entry.courseId}`} onClick={onRemove}><Trash2 size={16}/></button>}
+      <button
+        className="icon-button planned-remove"
+        aria-label={`Remove ${course?.code ?? entry.courseId} from plan`}
+        title="Remove from plan"
+        onClick={onRemove}
+      >
+        <Trash2 size={16} />
+      </button>
     </article>
   );
 }
@@ -308,7 +315,9 @@ function App() {
   const [drawer, setDrawer] = useState<Drawer>(null);
   const [activeCourse, setActiveCourse] = useState<Course | null>(null);
   const [target, setTarget] = useState(semesters[0]);
-  const [confirmExample, setConfirmExample] = useState(false);
+  const [confirmation, setConfirmation] = useState<"example" | "clear" | null>(null);
+  const confirmationTrigger = useRef<HTMLButtonElement>(null);
+  const undoButton = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -385,6 +394,7 @@ function App() {
   );
   const edit = (next: Plan) => {
     if (JSON.stringify(next) === JSON.stringify(plan)) return;
+    setConfirmation(null);
     setHistory((h) => [...h.slice(-39), plan]);
     setPlan(next);
   };
@@ -439,6 +449,7 @@ function App() {
       for(const expected of proposal.totals){const actual=totalCredits(next.entries.filter(e=>e.semesterId===expected.semesterId),fresh.courses);if(actual==null||actual!==expected.after)return "The replacement totals could not be verified. Your plan was left unchanged."}
     } else return "This draft contains an unsupported edit. Your plan was left unchanged.";
     if (planRef.current!==basis) return "Your plan changed while the catalog was checked. Run the advisor again.";
+    setConfirmation(null);
     setHistory(h=>[...h.slice(-39),basis]);setPlan(next);planRef.current=next;
     setNotice("Advisor change applied as one plan edit. Undo is available.");
     return "applied";
@@ -446,6 +457,7 @@ function App() {
   const undo = () => {
     const last = history.at(-1);
     if (last) {
+      setConfirmation(null);
       setPlan(last);
       setHistory((h) => h.slice(0, -1));
       setNotice("Last change undone.");
@@ -486,9 +498,21 @@ function App() {
     }
   };
   const applyExample = () => {
-    edit(examplePlan(plan.startYear, courses));
-    setConfirmExample(false);
-    setNotice("Example plan loaded. Make it your own.");
+    const example = examplePlan(plan.startYear, courses);
+    setConfirmation(null);
+    if (!example) {
+      confirmationTrigger.current?.focus();
+      setNotice("The example plan is unavailable because some of its courses are missing from this catalog.");
+      return;
+    }
+    edit(example);
+    setNotice("Example plan loaded.");
+    requestAnimationFrame(() => undoButton.current?.focus());
+  };
+  const clearSchedule = () => {
+    edit({ ...plan, entries: [] });
+    setNotice("Schedule cleared. Use Undo to restore your courses.");
+    requestAnimationFrame(() => undoButton.current?.focus());
   };
   const selected = drawer?.kind === "course" ? drawer.course : null;
   const selectedEntry = selected
@@ -522,6 +546,16 @@ function App() {
               <span className="brand-college">Grinnell course planner</span>
             </span>
           </a>
+          <button
+            className="library-toggle"
+            aria-label={`${sidebar ? "Hide" : "Show"} course library`}
+            aria-expanded={sidebar}
+            aria-controls="course-library"
+            onClick={() => setSidebar((open) => !open)}
+          >
+            {sidebar ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
+            <span>{sidebar ? "Hide courses" : "Show courses"}</span>
+          </button>
           <div className="topbar-right">
             <span className="save-status">
               {saveState.startsWith("Saved") && <Check size={14} />}
@@ -531,7 +565,7 @@ function App() {
               className="ai-trigger"
               onClick={() => setDrawer({ kind: "ai" })}
             >
-              <Sparkles size={16} />
+              <img src={advisorSquirrel} alt="" width={32} height={32} />
               <span>AI advisor</span>
             </button>
           </div>
@@ -541,16 +575,16 @@ function App() {
             <>
               <button
                 className="sidebar-backdrop"
-                aria-label="Close course browser"
+                aria-label="Hide course library"
                 onClick={() => setSidebar(false)}
               />
-              <aside className="catalog" aria-label="Course browser">
+              <aside id="course-library" className="catalog" aria-label="Course library">
                 <div className="catalog-heading">
                   <h2>Course library</h2>
                   <button
                     className="icon-button"
                     onClick={() => setSidebar(false)}
-                    aria-label="Close course browser"
+                    aria-label="Hide course library"
                   >
                     <PanelLeftClose size={19} />
                   </button>
@@ -734,15 +768,27 @@ function App() {
                 <button
                   className="example-button"
                   disabled={loading || !!error || !courses.length}
-                  onClick={() =>
+                  onClick={(event) => {
+                    confirmationTrigger.current = event.currentTarget;
                     plan.entries.length
-                      ? setConfirmExample(true)
-                      : applyExample()
-                  }
+                      ? setConfirmation("example")
+                      : applyExample();
+                  }}
                 >
                   Load example<span className="example-long"> plan</span>
                 </button>
                 <button
+                  className="example-button"
+                  disabled={!plan.entries.length}
+                  onClick={(event) => {
+                    confirmationTrigger.current = event.currentTarget;
+                    setConfirmation("clear");
+                  }}
+                >
+                  Clear schedule
+                </button>
+                <button
+                  ref={undoButton}
                   className="icon-button undo-button"
                   onClick={undo}
                   disabled={!history.length}
@@ -753,11 +799,23 @@ function App() {
                 </button>
               </div>
             </div>
-            {confirmExample && (
+            {confirmation && (
               <div className="confirmation" role="alert">
-                <span>Replace your current plan with the example?</span>
-                <button onClick={applyExample}>Replace plan</button>
-                <button onClick={() => setConfirmExample(false)}>Cancel</button>
+                {confirmation === "clear" ? (
+                  <>
+                    <span>Remove every course from your schedule? You can undo this change.</span>
+                    <button className="clear-confirm-button" onClick={clearSchedule}>Clear all courses</button>
+                  </>
+                ) : (
+                  <>
+                    <span>Replace your current plan with the example?</span>
+                    <button disabled={loading || !!error} onClick={applyExample}>Replace plan</button>
+                  </>
+                )}
+                <button autoFocus onClick={() => {
+                  setConfirmation(null);
+                  confirmationTrigger.current?.focus();
+                }}>Cancel</button>
               </div>
             )}
             {storageBlocked && (

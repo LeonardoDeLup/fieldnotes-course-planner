@@ -85,8 +85,8 @@ async def advice(request: Request, response: Response, body: AdviceRequest = Bod
             order += [x for x in all_choices if x not in order]
             if result.proposals:
                 target=options.get("targetCredits",16)
-                if action=="generate_full_plan":
-                    result.proposals.sort(key=lambda x:(workflows.full_plan_shortfall(x,target),order.index(x.id)))
+                if action=="generate_full_plan" or action=="generate_semester" and options.get("focusDepartments"):
+                    result.proposals.sort(key=lambda x:(workflows.draft_priority(x,body.plan,by_id,options),order.index(x.id)))
                 else:
                     result.proposals.sort(key=lambda x:(0 if action=="generate_semester" and x.totals and x.totals[0].after==target else 1,order.index(x.id) if x.id in order else 999))
             elif result.findings:

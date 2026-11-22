@@ -88,29 +88,26 @@ export function parsePlan(raw: string): Plan {
   }
   return p;
 }
-export function examplePlan(startYear: number, courses: Course[]): Plan {
-  return {
-    version: 1,
-    startYear,
-    entries: [
-      ["bio-150", 0],
-      ["csc-151", 0],
-      ["mat-131", 0],
-      ["eng-120", 0],
-      ["csc-161", 1],
-      ["mat-133", 1],
-      ["phi-101", 1],
-      ["art-111", 1],
-      ["csc-207", 2],
-      ["sta-209", 2],
-      ["spn-106", 2],
-      ["csc-208", 3],
-      ["mat-215", 3],
-      ["mus-101", 3],
-    ].filter(([courseId]) => courses.some(c => c.id === courseId)).map(([courseId, i], n) => ({
-      id: `example-${n}`,
-      courseId: String(courseId),
-      semesterId: `semester-${i}`,
+const exampleTerms = [
+  ["bio-150-cb736b1ae340-1", "csc-151", "mat-131", "eng-120-33fd7effb9ef-1"],
+  ["csc-161", "mat-133", "phi-101", "art-111"],
+  ["csc-207", "sta-209", "ecn-111", "art-155"],
+  ["csc-208", "mat-215", "mus-116", "soc-111"],
+  ["csc-211", "mat-220", "ecn-233", "rel-106"],
+  ["csc-301", "sta-230", "pol-101", "eng-205"],
+  ["csc-324", "mat-306", "psy-113", "mus-112"],
+  ["csc-341", "sta-309", "soc-350", "phi-254"],
+];
+
+export function examplePlan(startYear: number, courses: Course[]): Plan | null {
+  const catalogIds = new Set(courses.map(course => course.id));
+  const entries = exampleTerms.flatMap((courseIds, termIndex) =>
+    courseIds.map(courseId => ({
+      id: `example-${courseId}`,
+      courseId,
+      semesterId: semesters[termIndex],
     })),
-  };
+  );
+  if (entries.some(entry => !catalogIds.has(entry.courseId))) return null;
+  return { version: 1, startYear, entries };
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, Sparkles, ArrowUpRight, RefreshCw } from "lucide-react";
+import { BookOpen, ArrowUpRight, RefreshCw } from "lucide-react";
+import advisorSquirrel from "./advisor-squirrel.webp";
 import type { Plan, Course } from "./plan";
 import { semesters, semesterLabel, totalCredits } from "./plan";
 import { fetchAdvice, fetchCatalog, type Advice, type AdviceAction, type AdviceOptions, type Proposal } from "./advisorApi";
@@ -47,7 +48,7 @@ export function AiAdvisor({plan,courses,revision,catalogLoadFailed,onCatalogRetr
   const [action,setAction]=useState<AdviceAction>(initialAction??(initialSemester?"generate_semester":"critique_plan"));
   const [semester,setSemester]=useState(initialSemester??semesters.find(s=>!plan.entries.some(e=>e.semesterId===s))??"semester-0");
   const [target,setTarget]=useState(16); const [goals,setGoals]=useState(""); const [focus,setFocus]=useState("");
-  const [allowReview,setAllowReview]=useState(false); const [courseId,setCourseId]=useState(initialCourseId??"");
+  const [courseId,setCourseId]=useState(initialCourseId??"");
   const [result,setResult]=useState<Advice|null>(null); const [state,setState]=useState<"idle"|"loading"|"success"|"empty"|"error">("idle");
   const [message,setMessage]=useState(""); const [status,setStatus]=useState("Checking local AI…"); const [ack,setAck]=useState(false);
   const [statusCheck,setStatusCheck]=useState(0);
@@ -97,15 +98,64 @@ export function AiAdvisor({plan,courses,revision,catalogLoadFailed,onCatalogRetr
   }, [revision]);
   const fullPlan=action==="generate_full_plan";
   const generation=action==="generate_semester"||fullPlan;
+  const findingAlternatives = action === "find_alternatives";
+  const exploringRequisites = action === "prerequisite_roadmap";
+  const showCourse = findingAlternatives || exploringRequisites;
+  const showTerm = action === "generate_semester" || action === "discover_courses" || exploringRequisites;
+  const showTarget = generation || action === "critique_plan" || action === "advisor_brief";
+  const validTarget = target >= 1 && target <= 24 && Number.isInteger(target * 2);
+  const plannedCourse = plan.entries.find((entry) => entry.courseId === courseId);
+  const adviceSemester = findingAlternatives ? plannedCourse?.semesterId : semester;
+  const courseChoices = showCourse
+    ? courses.filter((course) => plan.entries.some((entry) => entry.courseId === course.id) ||
+        (exploringRequisites && course.id === initialCourseId))
+    : [];
+  const selectedCourse = courseChoices.find((course) => course.id === courseId);
+  const focusDepartments = [...new Set(focus.toUpperCase().split(/[\s,;]+/).filter(Boolean))];
+  const focusError = focusDepartments.length > 5
+    ? "Enter up to five department codes."
+    : focusDepartments.some((code) => !courses.some((course) => course.department === code))
+      ? "Use catalog department codes such as CSC or MAT."
+      : "";
+  const needsDiscoverInput = action === "discover_courses" && !goals.trim() && !focusDepartments.length;
+  const canRun = Boolean(revision) && !focusError && (!showTarget || validTarget) && !needsDiscoverInput &&
+    (!showCourse || Boolean(selectedCourse));
+
   const run=async()=>{
+    if (!canRun) return;
     reset(); const token=requestToken.current; const ctl=new AbortController();controller.current=ctl;setState("loading");setMessage("");
     const deadline=window.setTimeout(()=>ctl.abort("timeout"),fullPlan?110_000:95_000);
-    const options:AdviceOptions={targetCredits:target,focusDepartments:[...new Set(focus.split(/[ ,]+/).map(x=>x.toUpperCase()).filter(Boolean))].slice(0,5),goals:goals.trim()};
-    if(["generate_semester","discover_courses","find_alternatives","prerequisite_roadmap"].includes(action)) options.semesterId=semester;
-    if(generation) options.allowRequisiteReview=allowReview;
-    if(action==="find_alternatives"||action==="prerequisite_roadmap")options.courseId=courseId;
+    const options: AdviceOptions = { focusDepartments, goals: goals.trim() };
+    if (showTarget) options.targetCredits = target;
+    if (showTerm || findingAlternatives) options.semesterId = adviceSemester;
+    if (generation) options.allowRequisiteReview = true;
+    if (showCourse) options.courseId = courseId;
     try{const data=await fetchAdvice(action,revision,plan,options,ctl.signal);if(token!==requestToken.current)return;const known=new Set(courses.map(c=>c.id));if(data.proposals.some(p=>p.actions.some(a=>!known.has(a.courseId)||(a.kind==="replace"&&!known.has(a.replacementCourseId??"")))||p.placements.some(v=>!known.has(v.courseId)))||data.suggestions.some(s=>!known.has(s.courseId)))throw new Error("The advisor returned a course that is not in this catalog.");setResult(data);setState(data.proposals.length||data.findings.length||data.suggestions.length?"success":"empty");setMessage(data.summary)}
-    catch(e){if(token!==requestToken.current)return;if(ctl.signal.aborted){if(ctl.signal.reason==="timeout"){setState("error");setMessage("The advisor took too long to respond. Retry or use catalog-based advice when the local model is unavailable.")}return}const error=e as Error & {status?:number};if(error.status===409){try{const fresh=await fetchCatalog();onCatalogRefresh(fresh.courses,fresh.revision);setState("error");setMessage("Catalog changed. Run again with the refreshed catalog.")}catch{setState("error");setMessage("Catalog changed, but the catalog could not be refreshed. Retry.")}}else{setState("error");setMessage("Advisor request failed. Check the Python service, then retry.")}}
+    catch (e) {
+      if (token !== requestToken.current) return;
+      if (ctl.signal.aborted) {
+        if (ctl.signal.reason === "timeout") {
+          setState("error");
+          setMessage("The advisor took too long to respond. Retry or use catalog-based advice when the local model is unavailable.");
+        }
+        return;
+      }
+      const error = e as Error & { status?: number };
+      if (error.status === 409) {
+        try {
+          const fresh = await fetchCatalog(ctl.signal);
+          if (token !== requestToken.current) return;
+          onCatalogRefresh(fresh.courses, fresh.revision);
+          setMessage("Catalog changed. Run again with the refreshed catalog.");
+        } catch {
+          if (token !== requestToken.current) return;
+          setMessage("Catalog changed, but the catalog could not be refreshed. Retry.");
+        }
+      } else {
+        setMessage(error.status === 422 ? error.message : "Advisor request failed. Check the Python service, then retry.");
+      }
+      setState("error");
+    }
     finally{window.clearTimeout(deadline)}
   };
   const choose=(next:AdviceAction)=>{reset();setAction(next)};
@@ -132,25 +182,27 @@ export function AiAdvisor({plan,courses,revision,catalogLoadFailed,onCatalogRetr
   const draftA=result?.proposals.find(p=>p.id===previewId)||result?.proposals[0];
   const draftB=result?.proposals.find(p=>p.id===compareId&&p.id!==draftA?.id)||result?.proposals.find(p=>p.id!==draftA?.id);
   const fullPlanNeedsReview=fullPlan&&draftA?.placements.some(placement=>placement.requisiteStatus==="needs_review");
-  const showTerm=["generate_semester","discover_courses","find_alternatives","prerequisite_roadmap"].includes(action);
-  const showTarget=generation||action==="critique_plan"||action==="advisor_brief";
-  const validTarget=target>=1&&target<=24&&Number.isInteger(target*2);
   return <div className="ai-content">
-    <div className="ai-symbol"><Sparkles size={31}/></div>
-    <h2 id="drawer-title">A fresh perspective<br/>on your path.</h2>
+    <div className="advisor-intro">
+      <div className="advisor-portrait">
+        <img src={advisorSquirrel} alt="Squirrel advisor" width={80} height={80} />
+      </div>
+      <h2 id="drawer-title">A fresh perspective<br/>on your path.</h2>
+    </div>
     <p className="advisor-status" role="status">{status} <button className="text-button" onClick={() => setStatusCheck(check => check + 1)}>Check connection</button></p>
     <div className="advisor-form">
       <label>Planning workflow<select aria-label="Planning workflow" value={action} onChange={e=>choose(e.target.value as AdviceAction)}>{workflows.map(x=><option key={x.id} value={x.id}>{x.label}</option>)}</select></label>
       {showTerm&&termControl}
-      {(action==="find_alternatives"||action==="prerequisite_roadmap")&&<label>Course<select value={courseId} onChange={e=>{reset();setCourseId(e.target.value)}}><option value="">Choose a course</option>{courses.filter(c=>plan.entries.some(e=>e.courseId===c.id)).map(c=><option key={c.id} value={c.id}>{c.code} · {c.title}</option>)}</select></label>}
+      {showCourse && <label>Course<select aria-label="Course" value={selectedCourse?.id ?? ""} onChange={e=>{reset();setCourseId(e.target.value)}}><option value="">Choose a course</option>{courseChoices.map(c=><option key={c.id} value={c.id}>{c.code} · {c.title}</option>)}</select></label>}
+      {findingAlternatives && adviceSemester && <p className="form-hint">Planned for {semesterLabel(adviceSemester, plan.startYear)}.</p>}
       {showTarget&&<label>{fullPlan?"Credits per semester":"Reference credit target"}<input type="number" min="1" max="24" step="0.5" value={target} onChange={e=>{reset();setTarget(Number(e.target.value))}}/></label>}
       {action==="generate_semester"&&<p className="form-hint">Fills open credits and uses all eight terms as context. Current semester total: {current==null?"Credits unavailable":`${current} credits`}.</p>}
       {fullPlan&&<p className="form-hint">Fill open credits across all eight semesters while keeping courses you’ve already placed. The catalog covers one term, so verify future offerings and degree requirements.</p>}
-      <label>Focus departments (up to five)<input value={focus} placeholder="CSC, MAT" onChange={e=>focusChange(e.target.value)}/></label>
+      <label>Focus departments (up to five)<input value={focus} placeholder="CSC, MAT" aria-invalid={Boolean(focusError)} aria-describedby={focusError ? "advisor-focus-error" : undefined} onChange={e=>focusChange(e.target.value)}/></label>
+      {focusError && <p className="advisor-error" id="advisor-focus-error">{focusError}</p>}
       <label>Your goals<textarea maxLength={400} rows={3} value={goals} placeholder="What would you like this plan to make room for?" onChange={e=>{reset();setGoals(e.target.value)}}/></label>
-      {generation&&<label className="check-label"><input type="checkbox" checked={allowReview} onChange={e=>{reset();setAllowReview(e.target.checked)}}/>Include courses with prerequisites to verify</label>}
-      {action==="discover_courses"&&!goals.trim()&&!focus.trim()&&<p className="form-hint">Add a goal or one focus department to discover matching courses.</p>}
-      <div className="advisor-actions">{state==="loading"?<button className="primary-button" onClick={()=>{controller.current?.abort();requestToken.current++;setState("idle");setMessage("Request canceled.")}}>Cancel</button>:<button className="primary-button" disabled={!revision||(showTarget&&!validTarget)||((action==="find_alternatives"||action==="prerequisite_roadmap")&&!courseId)||(action==="discover_courses"&&!goals.trim()&&!focus.trim())} onClick={run}>{fullPlan?"Generate 4-year plan":action==="generate_semester"?"Generate drafts":action==="critique_plan"?"Review plan":"Get advice"}</button>}</div>
+      {needsDiscoverInput && <p className="form-hint">Add a goal or one focus department to discover matching courses.</p>}
+      <div className="advisor-actions">{state==="loading"?<button className="primary-button" onClick={()=>{controller.current?.abort();requestToken.current++;setState("idle");setMessage("Request canceled.")}}>Cancel</button>:<button className="primary-button" disabled={!canRun} onClick={run}>{fullPlan?"Generate 4-year plan":action==="generate_semester"?"Generate drafts":action==="critique_plan"?"Review plan":"Get advice"}</button>}</div>
     </div>
     <div className="ai-context"><BookOpen size={18}/><span>Your plan has {plan.entries.length} {plan.entries.length===1?"course":"courses"} across {new Set(plan.entries.map(e=>e.semesterId)).size} semesters. Catalog: {result?.sourceTerms.join(", ")??courses[0]?.source_term??(catalogLoadFailed?"unavailable":"loading")}. {catalogLoadFailed&&<button className="text-button" onClick={onCatalogRetry}>Retry catalog</button>}</span></div>
     {state==="loading"&&<p className="advisor-live" role="status">Reviewing your plan…</p>}
@@ -169,7 +221,7 @@ export function AiAdvisor({plan,courses,revision,catalogLoadFailed,onCatalogRetr
     {result && result.semesterStats.length>0&&(action==="critique_plan"||(fullPlan&&!draftA))&&<div className="stats-list"><h3>Eight-semester overview</h3>{result.semesterStats.map(s=><p key={s.semesterId}>{semesterLabel(s.semesterId,plan.startYear)} · {s.courseCount} courses · {s.credits==null?"Credits unavailable":`${s.credits} credits`}</p>)}</div>}
     {!fullPlan&&!!result?.proposals.length&&<div className="advisor-results"><h3>{action==="critique_plan"?"Proposed fixes":action==="find_alternatives"?"Replacement previews":"Drafts"}</h3>{result.proposals.slice(0,action==="critique_plan"?5:action==="find_alternatives"?5:3).map(p=>{const needsReview=p.placements.some(x=>x.requisiteStatus==="needs_review");const move=p.actions.some(a=>a.kind==="move");const replace=p.actions.some(a=>a.kind==="replace");const previewable=move||replace;return <article className="advisor-card" key={p.id}><span className="coming-soon">{p.label}</span><h4>{p.rationale}</h4><p>{p.actions.map(a=>`${a.kind} ${courseName(a.courseId)}${a.kind==="replace"&&a.replacementCourseId?` with ${courseName(a.replacementCourseId)}`:""} in ${semesterLabel(a.semesterId,plan.startYear)}`).join(" · ")}</p>{p.totals.map(t=><p key={t.semesterId}>{semesterLabel(t.semesterId,plan.startYear)} credits: {t.before??"unavailable"} → {t.after??"unavailable"}</p>)}{p.placements.map(x=><div className="evidence-row" key={x.courseId}><strong>{courseName(x.courseId)}</strong><span>{x.availability==="listed_in_source_term"?`Listed in ${courses.find(c=>c.id===x.courseId)?.source_term} catalog`:`Offering unverified for ${semesterLabel(x.semesterId,plan.startYear)}`}</span>{x.evidence.map((ev,i)=><small key={i}>{ev.excerpt}</small>)}</div>)}{p.notices.map((n,i)=><p className="form-hint" key={i}>{n}</p>)}{needsReview&&<label className="check-label"><input type="checkbox" checked={ack} onChange={e=>setAck(e.target.checked)}/>I’ll verify the listed requisites before using this draft.</label>}{previewable&&previewId!==p.id?<button className="primary-button" onClick={()=>setPreviewId(p.id)}>Preview {move?"move":"replacement"}</button>:<button className="primary-button" disabled={state==="loading"||!!(needsReview&&!ack)} onClick={()=>apply(p)}>{move?"Apply move":replace?"Apply replacement":"Add courses"}</button>}</article>})}</div>}
     {!!result?.findings.length&&<div className="advisor-results"><h3>Findings</h3>{result.findings.slice(0,expanded?result.findings.length:6).map(f=><article className="advisor-card" key={f.id}><span className={`severity ${f.severity}`}>{f.severity}</span><h4>{f.title}{f.semesterId?` · ${semesterLabel(f.semesterId,plan.startYear)}`:""}</h4><p>{f.detail}</p>{f.courseIds.map(id=><strong key={id}>{courseName(id)} </strong>)}{f.evidence.map((ev,i)=><blockquote key={i}>{ev.excerpt}</blockquote>)}<p className="form-hint">Next step: {f.nextStep}</p></article>)}{result.findings.length>6&&<button className="text-button" onClick={()=>setExpanded(!expanded)}>{expanded?"Show fewer":"Show all findings"}</button>}</div>}
-    {!!result?.suggestions.length&&<div className="advisor-results"><h3>Course suggestions</h3>{result.suggestions.slice(0,5).map(s=>{const c=courses.find(x=>x.id===s.courseId);return <article className="advisor-card" key={s.courseId}><h4>{c?.code} · {c?.title}</h4><p>{s.reason}</p>{c?.description&&<p>{c.description}</p>}{s.availability&&<p className="form-hint">{s.availability==="listed_in_source_term"?`Listed in ${c?.source_term} catalog`:`Offering unverified for ${semesterLabel(semester,plan.startYear)}`}</p>}{onOpenCourse&&c&&<button className="text-button" onClick={()=>onOpenCourse(c)}>Open course details <ArrowUpRight size={14}/></button>}</article>})}</div>}
+    {!!result?.suggestions.length&&<div className="advisor-results"><h3>Course suggestions</h3>{result.suggestions.slice(0,5).map(s=>{const c=courses.find(x=>x.id===s.courseId);return <article className="advisor-card" key={s.courseId}><h4>{c?.code} · {c?.title}</h4><p>{s.reason}</p>{c?.description&&<p>{c.description}</p>}{s.availability&&adviceSemester&&<p className="form-hint">{s.availability==="listed_in_source_term"?`Listed in ${c?.source_term} catalog`:`Offering unverified for ${semesterLabel(adviceSemester,plan.startYear)}`}</p>}{onOpenCourse&&c&&<button className="text-button" onClick={()=>onOpenCourse(c)}>Open course details <ArrowUpRight size={14}/></button>}</article>})}</div>}
     {action==="advisor_brief"&&result&&<><button className="primary-button" onClick={copyBrief}>Copy advising brief</button>{copyFallback&&<label>Copy this brief<textarea rows={8} readOnly value={briefText} onFocus={e=>e.currentTarget.select()}/></label>}</>}
     {plan.entries.length===0&&action==="critique_plan"&&<p className="form-hint">Your plan is empty. Generate a semester or a 4-year plan to get started.</p>}
   </div>;

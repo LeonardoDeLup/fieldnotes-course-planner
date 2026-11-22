@@ -2,8 +2,9 @@
 from collections import defaultdict
 from decimal import Decimal
 from .schemas import Advice, Finding, Proposal, Action, Total, Placement, Suggestion, Entry, MAX_PLAN_ENTRIES
-from .rules import (SEMESTERS, availability, evidence, fixed_credit, goal_score,
-                    requisite_status, status_map, term_label, totals)
+from .requisites import course_requirements
+from .rules import (SEMESTERS, availability, course_identity, evidence, fixed_credit, goal_score,
+                    requisite_status, term_label, totals)
 
 def _stats(plan, courses):
     return [{"semesterId": sid, "courseCount": n, "credits": value}
@@ -29,9 +30,9 @@ def critique(revision, courses, plan, options):
         status, ev, missing = requisite_status(course, plan, courses)
         if status == "sequence_gap":
             key = ("corequisite_gap" if course.id == "chm-129" else "sequence_gap", e.semester_id)
-            grouped[key].append((course, ev, missing))
+            grouped[(*key, course.id)].append((course, ev, missing))
         elif status == "needs_review":
-            grouped[("requisite_review", e.semester_id)].append((course, ev, []))
+            grouped[("requisite_review", e.semester_id, course.id)].append((course, ev, []))
         if course.source_term != term_label(e.semester_id, plan.start_year):
             grouped[("offering_unverified", e.semester_id)].append(course)
     stats = totals(plan, courses); target = options.get("targetCredits", 16)
@@ -46,15 +47,16 @@ def critique(revision, courses, plan, options):
                 if delta <= -2: grouped[("credit_below_target",sid)].append((credit,float(target)))
                 elif delta >= 2: grouped[("credit_above_target",sid)].append((credit,float(target)))
     severity={"sequence_gap":"attention","corequisite_gap":"attention","unavailable_course":"review","unknown_credits":"review","requisite_review":"review","offering_unverified":"info","empty_between_terms":"info","credit_below_target":"info","credit_above_target":"info"}
-    for (code,sid), values in grouped.items():
+    for key, values in grouped.items():
+        code, sid = key[:2]
         if code in {"sequence_gap","corequisite_gap","requisite_review"}:
             c,ev,missing=values[0]
             if code == "corequisite_gap":
                 detail=f"{c.code} requires CHM 129L in the same term."
                 step="Place CHM 129 and CHM 129L together, or verify the requirement with an adviser."
             elif code == "sequence_gap":
-                detail=f"The planned term does not show an earlier required course: {', '.join(missing)}."
-                step="Check completed or transfer work, or move the prerequisite earlier in this plan."
+                detail=f"Check the catalog timing for {', '.join(missing)} in this plan."
+                step="Check completed or transfer work and place each required course in a term that meets the catalog timing."
             else:
                 detail="The catalog text is not fully covered by a deterministic rule."
                 step="Verify the current requisite text with the department or an adviser."
@@ -110,7 +112,7 @@ def critique(revision, courses, plan, options):
             finding.proposal_id=pid
     return Advice.model_validate(out)
 
-def generate(revision, courses, plan, options, *, perspective=None):
+def generate(revision, courses, plan, options, *, perspective=None, pathways=None):
     sid=options["semesterId"]; target=Decimal(str(options.get("targetCredits",16)))
     by_id={c.id:c for c in courses}
     current=totals(plan,courses)[sid][1]
@@ -122,56 +124,77 @@ def generate(revision, courses, plan, options, *, perspective=None):
     if remaining<=0:
         out["summary"]="This semester has already reached the selected target. Choose a higher target to add courses."
         return Advice.model_validate(out)
-    existing_ids={e.course_id for e in plan.entries}; existing_codes={by_id[e.course_id].code for e in plan.entries if e.course_id in by_id}
+    existing_ids={e.course_id for e in plan.entries}
+    existing_codes={course_identity(by_id[e.course_id]) for e in plan.entries if e.course_id in by_id}
+    focus=set(options.get("focusDepartments", []))
+    pathways = pathways or {}
     lab=by_id.get("chm-129l")
-    allow_review=options.get("allowRequisiteReview",False)
+    allow_review=options.get("allowRequisiteReview",True)
     candidates=[]
     for c in courses:
         if c.id=="chm-129l": continue  # The lab is only suggested with its chemistry course.
-        if c.id in existing_ids or c.code in existing_codes or c.credits is None or c.credits<=0: continue
+        if c.id in existing_ids or course_identity(c) in existing_codes or c.credits is None or c.credits<=0: continue
         bundle=[c]
         if c.id=="chm-129":
             if lab is None or lab.credits is None: continue
             if lab.id in existing_ids:
                 lab_entry=next(e for e in plan.entries if e.course_id==lab.id)
                 if lab_entry.semester_id!=sid: continue
-            elif lab.code in existing_codes: continue
+            elif course_identity(lab) in existing_codes: continue
             else: bundle.append(lab)
         credits=sum((fixed_credit(x) for x in bundle),Decimal(0))
         if credits>remaining: continue
         trial=plan.model_copy(update={"entries":plan.entries+[Entry(courseId=x.id,semesterId=sid) for x in bundle]})
-        statuses=[requisite_status(x,trial,courses)[0] for x in bundle]
+        statuses=[requisite_status(x,trial,courses,by_id=by_id)[0] for x in bundle]
         if "sequence_gap" in statuses: continue
         needs_review="needs_review" in statuses
         if needs_review and not allow_review: continue
         candidates.append((c,bundle,credits,needs_review))
-    focus=set(options.get("focusDepartments",[])); represented={by_id[e.course_id].department for e in plan.entries if e.course_id in by_id}
-    base_scores={c.id:goal_score(c,options.get("goals", ""))-(6 if needs_review else 0)
+    represented={by_id[e.course_id].department for e in plan.entries if e.course_id in by_id}
+    goal_scores={c.id:goal_score(c,options.get("goals", "")) for c,_,_,_ in candidates}
+    base_scores={c.id:goal_scores[c.id]-(6 if needs_review else 0)
                  for c,_,_,needs_review in candidates}
     if perspective is not None:
-        early=SEMESTERS.index(sid)<2
+        term_index=SEMESTERS.index(sid)
+        focus_credits=defaultdict(float)
+        for entry in plan.entries:
+            existing=by_id.get(entry.course_id)
+            if existing and existing.department in focus:
+                focus_credits[existing.department] += existing.credits or 0
         for c,_,_,_ in candidates:
-            base_scores[c.id] -= 2
-            if early:
-                base_scores[c.id] += {100:1,200:0,300:-3}.get(c.level,0)
+            base_scores[c.id] += 5*goal_scores[c.id] - 2
+            # Favor earlier courses that make later focus courses possible.
+            base_scores[c.id] += min(20, pathways.get(c.code, 0)) * (7-term_index) / 4
+            if c.department in focus:
+                base_scores[c.id] += 8/(1+focus_credits[c.department]/4)
+            if term_index < 2:
+                base_scores[c.id] += {100:1,200:0,300:-3,400:-5}.get(c.level,0)
     continuity=2 if perspective is None else 0
     perspectives={
         "Balanced":lambda c:base_scores[c.id]+(3 if c.department in focus else 0)+(continuity if c.department in represented else 0),
         "Focus":lambda c:base_scores[c.id]+(5 if c.department in focus else 0)+(continuity if c.department in represented else 0),
         "Breadth":lambda c:base_scores[c.id]+(2 if c.department not in represented else 0),
     }
+    priority_credits={}
+    for course, _, credits, _ in candidates:
+        priority_credits[course.id]=Decimal(0)
+        if course.department in focus or (perspective is not None and not focus and goal_scores[course.id]>=2):
+            priority_credits[course.id]=credits
+        elif pathways.get(course.code, 0):
+            priority_credits[course.id]=credits/2
+
     finalist_rows=[]; seen_drafts=set()
     for label,score_for in perspectives.items():
         if perspective is not None and label != perspective: continue
-        ordered=sorted(candidates,key=lambda row:(-score_for(row[0]),row[0].id))
+        ordered=sorted(candidates,key=lambda row:(-priority_credits[row[0].id],-score_for(row[0]),row[0].id))
         # Preserve department breadth while bounding the search over the large catalog.
         pool=ordered[:60]
         for value in sorted({int(row[2]*2) for row in candidates}):
             pool.extend([row for row in ordered if int(row[2]*2)==value][:2])
         pool=list({row[0].id:row for row in pool}.values())
-        pool.sort(key=lambda row:(-score_for(row[0]),row[0].id))
+        pool.sort(key=lambda row:(-priority_credits[row[0].id],-score_for(row[0]),row[0].id))
         states=[{"rows":(),"credits":Decimal(0),"ids":frozenset(),"codes":frozenset(),"score":0,
-                 "next_index":0,"departments":frozenset()}]
+                 "next_index":0,"departments":frozenset(),"priority":Decimal(0)}]
         finalized=[]
         for _depth in range(6):
             buckets=defaultdict(list)
@@ -179,7 +202,7 @@ def generate(revision, courses, plan, options, *, perspective=None):
                 for index in range(state["next_index"],len(pool)):
                     row=pool[index]
                     c,bundle,credits,_=row
-                    bundle_ids={x.id for x in bundle}; bundle_codes={x.code for x in bundle}
+                    bundle_ids={x.id for x in bundle}; bundle_codes={course_identity(x) for x in bundle}
                     if state["ids"] & bundle_ids or state["codes"] & bundle_codes: continue
                     if len(plan.entries)+len(state["ids"])+len(bundle)>MAX_PLAN_ENTRIES: continue
                     added=state["credits"]+credits
@@ -187,6 +210,7 @@ def generate(revision, courses, plan, options, *, perspective=None):
                     diversity=2 if perspective=="Breadth" and c.department not in state["departments"] else 0
                     entry={"rows":state["rows"]+(row,),"credits":added,"ids":state["ids"]|bundle_ids,
                            "codes":state["codes"]|bundle_codes,"score":state["score"]+score_for(c)+diversity,
+                           "priority":state["priority"]+priority_credits[c.id],
                            "next_index":index+1 if perspective is not None else 0,
                            "departments":state["departments"]|{c.department}}
                     key=(int(added*2),len(entry["rows"]))
@@ -194,10 +218,10 @@ def generate(revision, courses, plan, options, *, perspective=None):
                     finalized.append(entry)
             states=[]
             for key,values in buckets.items():
-                values.sort(key=lambda x:(-x["score"],tuple(sorted(x["ids"]))))
+                values.sort(key=lambda x:(-x["priority"],-x["score"],tuple(sorted(x["ids"]))))
                 states.extend(values[:24])
             if not states: break
-        finalized.sort(key=lambda x:(abs(float(remaining-x["credits"])), -x["score"],tuple(sorted(x["ids"]))))
+        finalized.sort(key=lambda x:(-x["priority"],remaining-x["credits"],-x["score"],tuple(sorted(x["ids"]))))
         added_for_label=0
         for state in finalized:
             key=tuple(sorted(state["ids"]))
@@ -205,7 +229,7 @@ def generate(revision, courses, plan, options, *, perspective=None):
             seen_drafts.add(key)
             finalist_rows.append((label,state)); added_for_label+=1
             if added_for_label==(1 if perspective is not None else 4): break
-    finalist_rows.sort(key=lambda item:(0 if item[1]["credits"]==remaining else 1,abs(float(remaining-item[1]["credits"])), -item[1]["score"],tuple(sorted(item[1]["ids"]))))
+    finalist_rows.sort(key=lambda item:(-item[1]["priority"],remaining-item[1]["credits"],-item[1]["score"],tuple(sorted(item[1]["ids"]))))
     proposals=[]
     for n,(label,state) in enumerate(finalist_rows[:12]):
         bundle_courses=[]
@@ -215,7 +239,7 @@ def generate(revision, courses, plan, options, *, perspective=None):
         simulated=plan.model_copy(update={"entries":plan.entries+[Entry(courseId=x.id,semesterId=sid) for x in bundle_courses if x.id not in existing_ids]})
         placements=[]; notices=[]
         for x in bundle_courses:
-            st,xev,_=requisite_status(x,simulated,courses)
+            st,xev,_=requisite_status(x,simulated,courses,by_id=by_id)
             placements.append(Placement(courseId=x.id,semesterId=sid,availability=availability(x,sid,plan.start_year),requisiteStatus="needs_review" if st=="needs_review" else "no_issue_in_plan",evidence=xev))
             if st=="needs_review": notices.append(f"Verify the catalog requisites for {x.code} before placing it.")
         after=Decimal(str(current))+state["credits"]
@@ -234,13 +258,51 @@ def full_plan_shortfall(proposal, target):
     return sum(total.after is None or total.after < target for total in proposal.totals)
 
 
+def draft_priority(proposal, plan, by_id, options):
+    focus = set(options.get("focusDepartments", []))
+    projected = [by_id[row.course_id] for row in [*plan.entries, *proposal.actions] if row.course_id in by_id]
+    represented = {course.department for course in projected if course.department in focus}
+    focus_credits = sum(course.credits or 0 for course in projected if course.department in focus)
+    goals = options.get("goals", "")
+    goal_matches = sum(goal_score(course, goals) for course in projected)
+    return (-len(represented), -focus_credits, -goal_matches,
+            full_plan_shortfall(proposal, options.get("targetCredits", 16)))
+
+
+def _pathway_weights(courses, focus, goals):
+    # Trace each requested course back to the courses that open a path to it.
+    prerequisites = defaultdict(set)
+    for course in courses:
+        for rule in course_requirements(course)[0]:
+            if rule.timing != "same":
+                prerequisites[course.code].update(rule.codes)
+    dependents = defaultdict(set)
+    for course in courses:
+        if course.department not in focus and not goal_score(course, goals):
+            continue
+        seen = {course.code}
+        pending = list(prerequisites[course.code])
+        while pending:
+            code = pending.pop()
+            if code in seen:
+                continue
+            seen.add(code)
+            dependents[code].add(course.code)
+            pending.extend(prerequisites[code] - seen)
+    return {code: len(target_codes) for code, target_codes in dependents.items()}
+
+
 def generate_full_plan(revision, courses, plan, options):
     target=options.get("targetCredits",16)
     out=_base("generate_full_plan",revision,courses,plan,
               "Review the proposed courses and projected credits for all eight semesters.")
     before=totals(plan,courses)
-    first_profile="Focus" if options.get("focusDepartments") else "Balanced"
-    labels={"Focus":"More focus courses","Balanced":"Balanced mix","Breadth":"More departmental breadth"}
+    focus=options.get("focusDepartments", [])
+    by_id={course.id: course for course in courses}
+    pathways=_pathway_weights(courses, set(focus), options.get("goals", ""))
+    first_profile="Focus" if focus else "Balanced"
+    labels={"Focus":"More focus courses","Balanced":"Balanced mix",
+            "Breadth":"Focus with a wider mix of electives" if focus else "More departmental breadth"}
     seen=set()
 
     for profile in (first_profile,"Breadth"):
@@ -251,7 +313,7 @@ def generate_full_plan(revision, courses, plan, options):
             current=before[sid][1]
             if current is None or current>=target:
                 continue
-            term=generate(revision,courses,draft,{**options,"semesterId":sid},perspective=profile)
+            term=generate(revision,courses,draft,{**options,"semesterId":sid},perspective=profile,pathways=pathways)
             if not term.proposals:
                 continue
             addition=term.proposals[0]
@@ -268,15 +330,24 @@ def generate_full_plan(revision, courses, plan, options):
         after=totals(draft,courses)
         reached=sum(credits is not None and credits>=target for _,credits in after.values())
         reviews=sum(p.requisite_status=="needs_review" for p in placements)
+        notices=[f"{reviews} proposed courses have requisites to verify."] if reviews else []
+        if focus:
+            counts=defaultdict(int)
+            for action in actions:
+                counts[by_id[action.course_id].department] += 1
+            coverage=", ".join(f"{department} {counts[department]}" for department in focus)
+            notices.append(f"Proposed courses by focus department ({coverage}).")
+            if not any(counts[department] for department in focus):
+                notices.append("This draft adds electives only. Check open credits and prerequisites in your focus departments.")
         out["proposals"].append(Proposal(
             id=f"full-{profile.lower()}",label=labels[profile],
             rationale=f"Adds {len(actions)} courses and reaches the {target:g}-credit target in {reached} of 8 semesters.",
             actions=actions,placements=placements,
             totals=[Total(semesterId=sid,before=before[sid][1],after=after[sid][1]) for sid in SEMESTERS],
-            notices=[f"{reviews} proposed courses have requisites to verify."] if reviews else [],
+            notices=notices,
         ))
 
-    out["proposals"].sort(key=lambda proposal:full_plan_shortfall(proposal,target))
+    out["proposals"].sort(key=lambda proposal:draft_priority(proposal,plan,by_id,options))
     if not out["proposals"]:
         if all(credits is not None and credits>=target for _,credits in before.values()):
             out["summary"]="All eight semesters already meet or exceed your credit target."

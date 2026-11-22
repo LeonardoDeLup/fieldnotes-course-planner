@@ -41,7 +41,7 @@ class CommonOptions(StrictModel):
         return self
 
 class PlanGenerationOptions(CommonOptions):
-    allow_requisite_review: bool = Field(default=False, alias="allowRequisiteReview")
+    allow_requisite_review: bool = Field(default=True, alias="allowRequisiteReview")
 
 class GenerateOptions(PlanGenerationOptions):
     semester_id: SemesterId = Field(alias="semesterId")

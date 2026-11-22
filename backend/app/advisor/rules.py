@@ -2,15 +2,16 @@
 from collections import defaultdict
 from decimal import Decimal
 import hashlib, json, re
+from functools import lru_cache
+from .requisites import CODE, course_requirements
 
 SEMESTERS = [f"semester-{i}" for i in range(8)]
-SUPPORTED = {
-    "csc-161": ("Computer Science 151", "CSC-151 - Must be completed prior to taking this course."),
-    "csc-207": ("Computer Science 151 and 161", "CSC-151 and CSC-161 - Must be completed prior to taking this course."),
-    "mat-133": ("Mathematics 124 or 131", "MAT-124 or MAT-131 - Must be completed prior to taking this course."),
-    "mat-215": ("Mathematics 133", "MAT-133 - Must be completed prior to taking this course."),
-    "chm-129": ("None", "Take CHM-129L - Must be taken at the same time as this course."),
-}
+
+def course_identity(course):
+    # Both listings of a cross-listed course may have distinct catalog IDs.
+    if re.match(r"^(?:also listed as|see)\s+", course.description or "", re.I):
+        return (course.code.split()[-1], course.title.casefold())
+    return (course.code,)
 
 def catalog_revision(courses):
     rows = [c.model_dump(mode="json") for c in courses]
@@ -54,46 +55,44 @@ def evidence(course, field):
     from .schemas import Evidence
     return Evidence(courseId=course.id, field=field, excerpt=text)
 
-def requisite_status(course, plan, courses):
-    if course.id not in SUPPORTED:
-        values = [course.prerequisites, course.system_requisites, course.catalog_notes]
-        if values == ["None", "None", None]:
-            return "no_issue_in_plan", [], []
-        fields = ["prerequisites", "system_requisites", "catalog_notes"]
-        ev = [evidence(course, f) for f in fields]
-        return "needs_review", [x for x in ev if x], []
-    expected = SUPPORTED[course.id]
-    if (course.prerequisites, course.system_requisites) != expected or course.catalog_notes:
-        ev = [evidence(course, f) for f in ("prerequisites", "system_requisites", "catalog_notes")]
-        return "needs_review", [x for x in ev if x], []
+def requisite_status(course, plan, courses, *, by_id=None):
+    rules, review = course_requirements(course)
+    if not rules and not review:
+        return "no_issue_in_plan", [], []
+    ev = [item for field in ("prerequisites", "system_requisites", "catalog_notes")
+          if (item := evidence(course, field)) is not None]
+    current = next((SEMESTERS.index(e.semester_id) for e in plan.entries if e.course_id == course.id), None)
+    if rules and current is None:
+        return "needs_review", ev, []
+    if not rules:
+        return "needs_review", ev, []
+
+    by_id = by_id if by_id is not None else {c.id: c for c in courses}
     placements = defaultdict(list)
-    by_id = {c.id: c for c in courses}
-    for e in plan.entries:
-        placements[e.course_id].append(SEMESTERS.index(e.semester_id))
-    idx = {e.course_id: SEMESTERS.index(e.semester_id) for e in plan.entries}
-    current = idx.get(course.id)
-    if course.id == "csc-161":
-        clauses = [("csc-151", lambda p: current is not None and p < current)]
-    elif course.id == "csc-207":
-        clauses = [("csc-151", lambda p: current is not None and p < current), ("csc-161", lambda p: current is not None and p < current)]
-    elif course.id == "mat-133":
-        alternatives = [c.id for c in courses if c.code.upper() in {"MAT 124", "MAT 131"}]
-        clauses = [(alternatives, lambda p: current is not None and p < current)]
-    elif course.id == "mat-215":
-        clauses = [("mat-133", lambda p: current is not None and p < current)]
-    else:
-        lab_terms = [idx[x] for x in idx if x == "chm-129l"]
-        good = current is not None and current in lab_terms
-        return ("no_issue_in_plan" if good else "sequence_gap"), [evidence(course, "system_requisites")], ([] if good else ["chm-129l"])
+    for entry in plan.entries:
+        if entry.course_id == course.id:
+            continue
+        planned = by_id.get(entry.course_id)
+        if planned:
+            code = planned.code
+        elif match := CODE.fullmatch(entry.course_id):
+            code = f"{match[1]} {match[2]}".upper()
+        else:
+            continue
+        placements[code].append(SEMESTERS.index(entry.semester_id))
+
+    eligible = {"prior": lambda term: term < current, "same": lambda term: term == current,
+                "concurrent": lambda term: term <= current}
     missing = []
-    good_all = True
-    for need, predicate in clauses:
-        ids = need if isinstance(need, list) else [need]
-        match = any(any(predicate(p) for p in placements.get(cid, [])) for cid in ids)
-        if not match:
-            good_all = False
-            missing.extend(ids)
-    return ("no_issue_in_plan" if good_all else "sequence_gap"), [evidence(course, "prerequisites"), evidence(course, "system_requisites")], missing
+    for timing, codes, review_codes in rules:
+        if not any(eligible[timing](term) for code in codes for term in placements[code]):
+            if any(eligible[timing](term) for code in review_codes for term in placements[code]):
+                review = True
+            else:
+                missing.append(" or ".join(codes + review_codes))
+    if missing:
+        return "sequence_gap", ev, missing
+    return ("needs_review" if review else "no_issue_in_plan"), ev, []
 
 def status_map(plan, courses):
     result = {}
@@ -110,7 +109,23 @@ def availability(course, semester_id, start_year):
 def fixed_credit(course):
     return None if course.credits is None else Decimal(str(course.credits))
 
+
+GOAL_STOP_WORDS = {"and", "are", "can", "class", "classes", "course", "courses", "focus", "for", "from", "have",
+                   "interested", "into", "like", "more", "plan", "some", "take", "that", "the", "want", "with", "would"}
+
+
+@lru_cache(maxsize=128)
+def _goal_tokens(goals):
+    return frozenset(re.findall(r"\b[a-z]{3,}\b", goals.lower())) - GOAL_STOP_WORDS
+
+
 def goal_score(course, goals):
-    tokens = {t.lower() for t in re.split(r"[^a-zA-Z0-9]+", goals) if len(t) >= 3}
-    text = f"{course.code} {course.title} {course.description or ''}".lower()
-    return min(5, sum(1 for t in tokens if re.search(rf"\b{re.escape(t)}\b", text)))
+    if not goals:
+        return 0
+    department, number = course.code.split(maxsplit=1)
+    if re.search(rf"\b{re.escape(department)}[-\s]+{re.escape(number)}\b", goals, re.I):
+        return 5
+    tokens = _goal_tokens(goals)
+    title_words = set(re.findall(r"\b[a-z]{3,}\b", course.title.lower())) | {department.lower()}
+    subject_words = set(re.findall(r"\b[a-z]{3,}\b", (course.description or "").lower()))
+    return min(5, 2 * len(tokens & title_words) + len(tokens & (subject_words - title_words)))

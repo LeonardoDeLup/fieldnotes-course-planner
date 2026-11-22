@@ -108,3 +108,39 @@ def test_full_plan_preserves_unknown_and_already_full_terms(monkeypatch):
                    for action in proposal['actions'])
         assert all(total['after'] == 4 for total in proposal['totals'][2:])
 
+
+def test_all_full_plan_drafts_build_sequences_in_requested_departments(monkeypatch):
+    monkeypatch.setenv('FIELDNOTES_AI_ENABLED', '0')
+    with advisor_client() as client:
+        catalog = client.get('/api/courses')
+        by_id = {row['id']: row for row in catalog.json()}
+        ant_104 = next(row['id'] for row in by_id.values() if row['code'] == 'ANT 104')
+        revision, plan = catalog_and_plan(client, [
+            {'courseId': ant_104, 'semesterId': 'semester-0'},
+        ])
+        response = client.post('/api/ai/advice', json={
+            'action': 'generate_full_plan', 'catalogRevision': revision, 'plan': plan,
+            'options': {'focusDepartments': ['MAT', 'CSC', 'STA'], 'goals': 'Applied data science'},
+        })
+        assert response.status_code == 200
+        proposals = response.json()['proposals']
+        assert len(proposals) == 2
+        for proposal in proposals:
+            courses = [(by_id[action['courseId']], action['semesterId']) for action in proposal['actions']]
+            terms = {course['code']: term for course, term in courses}
+            assert len(terms) == len(courses)
+            assert 'ANT 104' not in terms
+            assert sum(course['credits'] for course, _ in courses if course['department'] in {'MAT', 'CSC', 'STA'}) >= 96
+            assert 'MAT 314' not in terms and 'STA 336' not in terms
+            assert not {'CSC 208', 'MAT 208'} <= terms.keys()
+            assert terms['MAT 131'] < terms['MAT 133'] < terms['MAT 215'] < terms['MAT 218'] < terms['MAT 316']
+            assert terms['CSC 151'] < terms['CSC 161'] < terms['CSC 207'] < terms['CSC 324']
+            if 'CSC 326' in terms:
+                assert terms['CSC 324'] < terms['CSC 326']
+            assert terms['STA 209'] < terms['STA 230'] < terms['STA 330']
+            assert terms['CSC 207'] < terms['STA 330']
+            assert all(total['after'] == 16 for total in proposal['totals'])
+            assert proposal['totals'][0]['before'] == 4
+            assert next(p for p in proposal['placements'] if p['courseId'] == 'mat-131')['requisiteStatus'] == 'needs_review'
+            assert any(notice.startswith('Proposed courses by focus department') for notice in proposal['notices'])
+

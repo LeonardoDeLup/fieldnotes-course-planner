@@ -32,11 +32,12 @@ cd ..
 - Alternatively, open any course card or its plus button and select a semester. These controls work with keyboard and touch.
 - Click a planned course to move or remove it. Undo restores the previous plan edit.
 - An amber exclamation marks a planned course with a missing or mistimed course requisite. Open the card to see the course and semester timing to check.
-- Change the starting fall year without changing placements. Load example plan provides a populated demonstration, with confirmation before replacement.
+- Change the starting fall year without changing placements. **Load example plan** fills all eight semesters across four years with 32 courses from the catalog, with confirmation before replacement.
+- **Clear schedule** removes every planned course after confirmation and keeps the starting year. Use Undo to restore the previous schedule.
 - The plan saves on this browser and origin. It is not stored in Python or synchronized across devices. Use the same `127.0.0.1:5173` address when reopening.
 - Generate semester from any term header to preview course drafts. Critique the full plan for sequence, credit, source-term, and catalog-data signals. The drawer also supports course discovery, prerequisite exploration, alternatives, and an advising brief.
-- Choose **Generate 4-year plan** in the AI advisor to draft courses across all eight semesters. Set a credit target per semester and optionally add focus departments and goals. Existing placements appear in the preview alongside proposed courses. Applying a draft adds the courses in one undoable edit.
-- Drafts and findings use the current CSV snapshot. Requisite checks cover a small set of explicit catalog rules; other text is shown for manual review. This is not a degree audit, enrollment check, or guarantee of future offerings.
+- Choose **Generate 4-year plan** in the AI advisor to draft courses across all eight semesters. Set a credit target per semester and add focus departments or goals. Every draft prioritizes the selected departments, schedules prerequisites that open paths to later courses, and shows how many proposed courses come from each focus department. Existing placements appear in the preview. Applying a draft adds the courses in one undoable edit.
+- Drafts and findings use the current CSV snapshot. The advisor checks explicit course prerequisites and timing and flags conditions such as placement or minimum grades for review. Use the catalog and an adviser to verify degree requirements, enrollment eligibility, and future offerings.
 - The optional model runs locally through Ollama. Without it, deterministic catalog advice still works. No student plan or prompt is written to disk by the advisor.
 
 The supplied Spring 2027 CSV is loaded directly. Card warnings compare explicit course requisites with semester placements in your plan. The course details show the full catalog text for requirements such as placement, grades, or instructor permission. Duplicate course placement is prevented in this version, including courses that could eventually be repeatable.
