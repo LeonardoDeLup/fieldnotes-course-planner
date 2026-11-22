@@ -35,6 +35,7 @@ cd ..
 - Change the starting fall year without changing placements. Load example plan provides a populated demonstration, with confirmation before replacement.
 - The plan saves on this browser and origin. It is not stored in Python or synchronized across devices. Use the same `127.0.0.1:5173` address when reopening.
 - Generate semester from any term header to preview course drafts. Critique the full plan for sequence, credit, source-term, and catalog-data signals. The drawer also supports course discovery, prerequisite exploration, alternatives, and an advising brief.
+- Choose **Generate 4-year plan** in the AI advisor to draft courses across all eight semesters. Set a credit target per semester and optionally add focus departments and goals. Existing placements appear in the preview alongside proposed courses. Applying a draft adds the courses in one undoable edit.
 - Drafts and findings use the current CSV snapshot. Requisite checks cover a small set of explicit catalog rules; other text is shown for manual review. This is not a degree audit, enrollment check, or guarantee of future offerings.
 - The optional model runs locally through Ollama. Without it, deterministic catalog advice still works. No student plan or prompt is written to disk by the advisor.
 

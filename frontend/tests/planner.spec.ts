@@ -125,6 +125,34 @@ test("critique previews and applies a supported move before undo", async ({page}
   await page.getByRole("button",{name:"Undo last change"}).click();
   await expect(page.getByTestId("semester-0").getByTestId("planned-csc-161")).toBeVisible();
 });
+
+test("four-year advisor previews all terms, applies as one edit, and keeps saved courses on undo", async ({page})=>{
+  const plan={version:1,startYear:2026,entries:[{id:"saved",courseId:"csc-151",semesterId:"semester-0"}]};
+  await page.evaluate(value=>localStorage.setItem("fieldnotes-plan-v1",JSON.stringify(value)),plan);
+  await page.reload();
+  await page.getByRole("button",{name:"AI advisor"}).click();
+  const dialog=page.getByRole("dialog");
+  await dialog.getByLabel("Planning workflow").selectOption({label:"Generate 4-year plan"});
+  await expect(dialog.getByLabel("Semester",{exact:true})).toHaveCount(0);
+  await dialog.getByLabel("Focus departments (up to five)").fill("CSC");
+  await dialog.getByRole("button",{name:"Generate 4-year plan"}).click();
+  await expect(dialog.getByRole("heading",{name:"4-year plan preview"})).toBeVisible();
+  await expect(dialog.locator(".full-plan-terms summary")).toHaveCount(8);
+  await expect(dialog.getByText("16-credit target in 8 of 8 semesters",{exact:false})).toBeVisible();
+  await dialog.locator("summary").filter({hasText:"Fall 2026"}).click();
+  await expect(dialog.getByText("Already planned",{exact:true})).toBeVisible();
+  await expect(page.locator(".planned-card")).toHaveCount(1);
+
+  await dialog.getByRole("button",{name:"Apply 4-year draft"}).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.locator(".total-credits")).toContainText("128");
+  for (let i=0;i<8;i++) {
+    await expect(page.getByTestId(`semester-${i}`).locator(".planned-card").first()).toBeVisible();
+  }
+  await page.getByRole("button",{name:"Undo last change"}).click();
+  await expect(page.locator(".planned-card")).toHaveCount(1);
+  await expect(page.getByTestId("semester-0").getByTestId("planned-csc-151")).toBeVisible();
+});
 test("a changed catalog revision invalidates the preview and allows a rerun",async({page})=>{
   await page.getByRole("button",{name:"Generate semester for Fall 2026"}).click();
   await page.getByLabel("Reference credit target").fill("8");

@@ -151,10 +151,13 @@ def generate(revision, courses, plan, options, *, perspective=None):
     if perspective is not None:
         early=SEMESTERS.index(sid)<2
         for c,_,_,_ in candidates:
-            base_scores[c.id] += (1 if early and c.level==100 else 0) - 2
+            base_scores[c.id] -= 2
+            if early:
+                base_scores[c.id] += {100:1,200:0,300:-3}.get(c.level,0)
+    continuity=2 if perspective is None else 0
     perspectives={
-        "Balanced":lambda c:base_scores[c.id]+(3 if c.department in focus else 0)+(2 if c.department in represented else 0),
-        "Focus":lambda c:base_scores[c.id]+(5 if c.department in focus else 0)+(2 if c.department in represented else 0),
+        "Balanced":lambda c:base_scores[c.id]+(3 if c.department in focus else 0)+(continuity if c.department in represented else 0),
+        "Focus":lambda c:base_scores[c.id]+(5 if c.department in focus else 0)+(continuity if c.department in represented else 0),
         "Breadth":lambda c:base_scores[c.id]+(2 if c.department not in represented else 0),
     }
     finalist_rows=[]; seen_drafts=set()
@@ -167,7 +170,8 @@ def generate(revision, courses, plan, options, *, perspective=None):
             pool.extend([row for row in ordered if int(row[2]*2)==value][:2])
         pool=list({row[0].id:row for row in pool}.values())
         pool.sort(key=lambda row:(-score_for(row[0]),row[0].id))
-        states=[{"rows":(),"credits":Decimal(0),"ids":frozenset(),"codes":frozenset(),"score":0,"next_index":0}]
+        states=[{"rows":(),"credits":Decimal(0),"ids":frozenset(),"codes":frozenset(),"score":0,
+                 "next_index":0,"departments":frozenset()}]
         finalized=[]
         for _depth in range(6):
             buckets=defaultdict(list)
@@ -180,7 +184,11 @@ def generate(revision, courses, plan, options, *, perspective=None):
                     if len(plan.entries)+len(state["ids"])+len(bundle)>MAX_PLAN_ENTRIES: continue
                     added=state["credits"]+credits
                     if added>remaining: continue
-                    entry={"rows":state["rows"]+(row,),"credits":added,"ids":state["ids"]|bundle_ids,"codes":state["codes"]|bundle_codes,"score":state["score"]+score_for(c),"next_index":index+1 if perspective is not None else 0}
+                    diversity=2 if perspective=="Breadth" and c.department not in state["departments"] else 0
+                    entry={"rows":state["rows"]+(row,),"credits":added,"ids":state["ids"]|bundle_ids,
+                           "codes":state["codes"]|bundle_codes,"score":state["score"]+score_for(c)+diversity,
+                           "next_index":index+1 if perspective is not None else 0,
+                           "departments":state["departments"]|{c.department}}
                     key=(int(added*2),len(entry["rows"]))
                     buckets[key].append(entry)
                     finalized.append(entry)
