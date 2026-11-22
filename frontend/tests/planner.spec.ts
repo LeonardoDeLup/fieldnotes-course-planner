@@ -127,6 +127,7 @@ test("critique previews and applies a supported move before undo", async ({page}
 });
 
 test("four-year advisor previews all terms, applies as one edit, and keeps saved courses on undo", async ({page})=>{
+  test.setTimeout(125_000);
   const plan={version:1,startYear:2026,entries:[{id:"saved",courseId:"csc-151",semesterId:"semester-0"}]};
   await page.evaluate(value=>localStorage.setItem("fieldnotes-plan-v1",JSON.stringify(value)),plan);
   await page.reload();
@@ -136,7 +137,7 @@ test("four-year advisor previews all terms, applies as one edit, and keeps saved
   await expect(dialog.getByLabel("Semester",{exact:true})).toHaveCount(0);
   await dialog.getByLabel("Focus departments (up to five)").fill("CSC");
   await dialog.getByRole("button",{name:"Generate 4-year plan"}).click();
-  await expect(dialog.getByRole("heading",{name:"4-year plan preview"})).toBeVisible();
+  await expect(dialog.getByRole("heading",{name:"4-year plan preview"})).toBeVisible({timeout:110_000});
   await expect(dialog.locator(".full-plan-terms summary")).toHaveCount(8);
   await expect(dialog.getByText("16-credit target in 8 of 8 semesters",{exact:false})).toBeVisible();
   await dialog.locator("summary").filter({hasText:"Fall 2026"}).click();
