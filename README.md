@@ -2,6 +2,8 @@
 
 A local dark-mode, four-year planning workspace. React and TypeScript provide the interface; Python FastAPI serves the supplied Spring 2027 course CSV (395 rows, including distinct topics and repeat codes). An optional local Ollama model ranks catalog-based drafts and findings; the planner remains usable when Ollama is unavailable.
 
+[Open the live Fieldnotes demo](https://fieldnotes-planner.onrender.com/)
+
 ## Run
 
 With dependencies installed as shown below, use the original launcher:
