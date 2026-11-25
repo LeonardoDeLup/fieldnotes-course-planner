@@ -13,3 +13,6 @@ frontend/playwright-report/
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.log

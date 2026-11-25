@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: fieldnotes-planner
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: FIELDNOTES_AI_ENABLED
+        value: "0"

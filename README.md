@@ -4,7 +4,7 @@ A local dark-mode, four-year planning workspace. React and TypeScript provide th
 
 ## Run
 
-This workspace already includes installed dependencies and a project-local Node runtime:
+With dependencies installed as shown below, use the original launcher:
 
 ```sh
 ./start.sh
@@ -104,3 +104,24 @@ Browser tests cover catalog filtering, mouse dragging, ordering, keyboard-access
 - Production TypeScript/Vite build: passed.
 - Chromium browser suite: **14 passed**, including advisor generation, move preview/apply/undo, stale-catalog invalidation, and recovery from an older API.
 - The installed `qwen3-vl:4b-instruct` model returned ranked advice through the full advisor route.
+
+## Portfolio deployment
+
+Fieldnotes was built for Prairy Hacks by Edgar Romero, Leo Lupchinski, and Logan Rudsenske. This copy is based on [the team repository](https://github.com/LeonardoDeLup/fieldnotes-course-planner) at commit `80bd9e1`.
+
+The Docker build compiles the React frontend and serves it from the same FastAPI process as the catalog and advice endpoints. The hosted configuration uses the existing rules-based advisor and the bundled 395-record catalog. It requires no API keys, external database, or Ollama instance. The original local launcher still supports optional Qwen ranking through Ollama.
+
+To preview the hosted configuration with Node.js 22 and Python 3.12:
+
+```sh
+python3.12 -m venv backend/.venv
+backend/.venv/bin/python -m pip install -r backend/requirements.txt
+(cd frontend && npm ci --legacy-peer-deps && npm run build)
+FIELDNOTES_AI_ENABLED=0 backend/.venv/bin/python -m uvicorn app.hosted:app --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Press **Ctrl+C** to stop.
+
+The included `render.yaml` describes a [Render Free web service](https://render.com/docs/free) with HTTPS and `/api/health` as its health check. Render puts the service to sleep after 15 idle minutes. Waking can take about a minute. The advisor sends current plan and goal inputs to the Fieldnotes API to calculate advice. The planner saves its schedule in browser storage.
+
+To demonstrate, load the example schedule, find a course, and generate a semester draft. Show the prerequisite evidence and preview a proposed change before applying it.
